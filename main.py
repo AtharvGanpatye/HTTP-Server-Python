@@ -214,6 +214,11 @@ def handle_POST(request, dtime):
     content_type = 'text/html'
     return status_code, reason_phrase, content_type, btext
 
+
+# PUT Code
+def handle_put(request):
+    pass
+
 while True:
     connectionSocket, addr = serverSocket.accept()
     #print("New Request Received From : {}".format(addr))
