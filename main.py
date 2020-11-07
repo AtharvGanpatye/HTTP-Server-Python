@@ -11,6 +11,10 @@ cookies = 2 marks; log = 3 marks;  file permissions = 1 marks; Automated Testing
 from socket import *
 import sys, os, time
 
+if len(sys.argv) < 2:
+    print("Bad Arguments !\nGive Port Number As Well.")
+    sys.exit(0)
+
 serverSocket = socket(AF_INET, SOCK_STREAM)
 
 # Port number to bind with socket.
@@ -67,18 +71,44 @@ def convert_to_string(string):
 # GET Code
 def handle_GET(words):
 
-    request = words[1]
-    abs_file_path = os.getcwd() + request
+    requested_file = words[1]
+    abs_file_path = os.getcwd() + requested_file
 
     # Status Code, Reason Phrase header
     accept_lang, content_type = handle_req_headers(words)
     status_code, reason_phrase, btext = handle_codes(words, accept_lang)
 
+    # Content-Type Header
+    charset = None
+    if '/' == requested_file:
+        content_type = 'text/html'
+        charset = 'UTF-8'
+    elif '.html' in requested_file:
+        content_type = 'text/html'
+        charset = 'UTF-8'
+    elif '.jpg' in requested_file or '.jpeg' in requested_file:
+        content_type = 'image/jpeg'
+    elif '.png' in requested_file:
+        content_type = 'image/png'
+    elif '.gif' in requested_file:
+        content_type = 'image/gif'
+    elif '.css' in requested_file:
+        content_type = 'text/css'
+        charset = 'UTF-8'
+    elif '.txt' in requested_file:
+        content_type = 'text/plain'
+        charset = 'UTF-8'
+    else:
+        content_type = 'text/html'
+        charset = 'UTF-8'
+        btext = "Sorry, Unknown Data Type !\nTry Again!\n".encode()
+        status_code, reason_phrase = 404, "Not Found"
+
     if status_code == 406:
-        return status_code, reason_phrase, "text/html", btext
+        return 'UTF-8',status_code, reason_phrase, "text/html", btext
 
     elif words[1] == "/favicon.ico":
-        return -1,-1,-1,-1
+        return -1,-1,-1,-1,-1
 
     elif words[1] == '/':
         req_file = open("home.html", mode='rb')
@@ -86,42 +116,88 @@ def handle_GET(words):
         status_code, reason_phrase = 200, "OK"
         req_file.close()
 
-    elif os.path.isfile(abs_file_path):
-        req_file = open(abs_file_path, mode='rb')
-        # Check for permissions needed
-        btext = req_file.read()
-        status_code, reason_phrase = 200, "OK"
-        req_file.close()
+    else:
+        if not os.access(abs_file_path, os.F_OK):
+            btext = "Sorry! Page Not Found\nTry Again!\n".encode()
+            status_code, reason_phrase = 404, "Not Found"
 
-    elif not os.path.isfile(abs_file_path):
-        btext = "Sorry! Page Not Found\nTry Again!\n".encode()
-        status_code, reason_phrase = 404, "Not Found"
-        return status_code, reason_phrase, "text/html", btext
+        elif os.access(abs_file_path, os.R_OK):
+            req_file = open(abs_file_path, mode='rb')
+            btext = req_file.read()
+            status_code, reason_phrase = 200, "OK"
+            req_file.close()
+
+        else:
+            #btext = "File Doesn't Have Read Permissions !\n".encode()
+            content_type = None
+            status_code, reason_phrase = 403, "Forbidden"
+
+    return charset, status_code, reason_phrase, content_type, btext
+
+
+# HEAD Code
+def handle_HEAD(words):
+
+    requested_file = words[1]
+    abs_file_path = os.getcwd() + requested_file
+
+    # Status Code, Reason Phrase header
+    accept_lang, content_type = handle_req_headers(words)
+    status_code, reason_phrase, btext = handle_codes(words, accept_lang)
+
+    if status_code == 406:
+        return 'UTF-8', status_code, reason_phrase, "text/html", btext
+
+    elif words[1] == "/favicon.ico":
+        return -1,-1,-1,-1,-1
+
+    elif words[1] == '/':
+        if not os.access('home.html', os.F_OK):
+            status_code, reason_phrase = 404, "Not Found"
+        elif os.access('home.html', os.R_OK):
+            status_code, reason_phrase = 200, "OK"
+        else:
+            status_code, reason_phrase = 403, "Forbidden"
 
     else:
-        pass
+        if not os.access(abs_file_path, os.F_OK):
+            #btext = "Sorry! Page Not Found\nTry Again!\n".encode()
+            status_code, reason_phrase = 404, "Not Found"
+
+        elif os.access(abs_file_path, os.R_OK):
+            status_code, reason_phrase = 200, "OK"
+
+        else:
+            #btext = "File Doesn't Have Read Permissions !\n".encode()
+            status_code, reason_phrase = 403, "Forbidden"
 
     # Content-type header
-    if '/' == request:
+    charset = None
+    if '/' == requested_file:
         content_type = 'text/html'
-    elif '.html' in request:
+        charset = 'UTF-8'
+    elif '.html' in requested_file:
         content_type = 'text/html'
-    elif '.jpg' in request or '.jpeg' in request:
+        charset = 'UTF-8'
+    elif '.jpg' in requested_file or '.jpeg' in requested_file:
         content_type = 'image/jpeg'
-    elif '.png' in request:
+    elif '.png' in requested_file:
         content_type = 'image/png'
-    elif '.gif' in request:
+    elif '.gif' in requested_file:
         content_type = 'image/gif'
-    elif '.css' in request:
+    elif '.css' in requested_file:
         content_type = 'text/css'
-    elif '.txt' in request:
+        charset = 'UTF-8'
+    elif '.txt' in requested_file:
         content_type = 'text/plain'
+        charset = 'UTF-8'
     else:
         content_type = 'text/html'
+        charset = 'UTF-8'
         btext = "Sorry, Unknown Data Type !\nTry Again!\n".encode()
         status_code, reason_phrase = 404, "Not Found"
 
-    return status_code, reason_phrase, content_type, btext
+    return charset, status_code, reason_phrase, content_type, btext
 
 
 # POST Code
@@ -216,9 +292,34 @@ def handle_POST(request, dtime):
 
 
 # PUT Code
-def handle_put(request):
+def handle_PUT(request):
     pass
 
+
+# DELETE Code
+def handle_DELETE(request):
+    requested_file = words[1]
+    abs_file_path = os.getcwd() + requested_file
+
+    # Status Code, Reason Phrase header
+    accept_lang, content_type = handle_req_headers(words)
+    status_code, reason_phrase, btext = handle_codes(words, accept_lang)
+
+    content_type = 'text/html'
+    if status_code == 406:
+        return 'UTF-8', status_code, reason_phrase, "text/html", btext
+
+    if os.access(abs_file_path, os.F_OK):
+        print("\nFile Exists, Deleted Successfully !\n")
+        btext = b'File Exists, Deleted Successfully !'
+        status_code, reason_phrase = 200, "OK"
+    
+    else:
+        print("\nFile Not Present On The Server !\n")
+        btext = b'File Not Present On The Server !'
+        status_code, reason_phrase = 200, "OK"
+
+    return status_code, reason_phrase, content_type, btext
 
 while True:
     connectionSocket, addr = serverSocket.accept()
@@ -236,7 +337,7 @@ while True:
     status_code, reason_phrase, content_type, btext = 0,0,0,'null'
 
     if words[0] == "GET":
-        status_code, reason_phrase, content_type, btext = handle_GET(words)
+        charset, status_code, reason_phrase, content_type, btext = handle_GET(words)
 
         if status_code == -1:
             continue
@@ -248,7 +349,8 @@ while True:
         pass
 
     elif words[0] == "HEAD":
-        pass
+        charset, status_code, reason_phrase, content_type, btext = handle_HEAD(words)
+        print("Content Type: ", content_type)
 
     elif words[0] == "DELETE":
         pass
@@ -260,12 +362,20 @@ while True:
     string += "Date: {} \n".format(dtime)
     string += "Server: Atharv's Server/V1.0\n"
     string += "Connection: close\n"
-    string += "Content-Type: {}; charset=UTF-8\n".format(content_type)
-    string += "Content-Length: {}\n\n".format(len(string.encode() + btext))
+    # Check content-type, charset.
+    if charset:
+        string += "Content-Type: {}; charset=UTF-8\n".format(content_type)
+    if content_type:
+        string += "Content-Type: {};\n".format(content_type)
+    # Checking if content is present or not.
+    if btext:
+        string += "Content-Length: {}\n\n".format(len(string.encode() + btext))
+        output = string.encode() + btext
+    else:
+        string += "Content-Length: {}\n\n".format(len(string.encode()))
+        output = string.encode()
 
-    output = string.encode() + btext
     connectionSocket.send(output)
-
     connectionSocket.close()
 
 serverSocket.close()
