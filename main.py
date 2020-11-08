@@ -200,6 +200,31 @@ def handle_HEAD(words):
     return charset, status_code, reason_phrase, content_type, btext
 
 
+# DELETE Code
+def handle_DELETE(words):
+    requested_file = words[1]
+    abs_file_path = os.getcwd() + requested_file
+
+    # Status Code, Reason Phrase header
+    accept_lang, content_type = handle_req_headers(words)
+    status_code, reason_phrase, btext = handle_codes(words, accept_lang)
+
+    content_type = 'text/html'
+    if status_code == 406:
+        return 'UTF-8', status_code, reason_phrase, "text/html", btext
+
+    if os.access(abs_file_path, os.F_OK):
+        os.remove(abs_file_path)
+        btext = 'File Deleted Successfully !'.encode()
+        status_code, reason_phrase = 200, "OK"
+    
+    else:
+        btext = 'File Not Present On The Server !'.encode()
+        status_code, reason_phrase = 200, "OK"
+
+    return 'UTF-8',status_code, reason_phrase, content_type, btext
+
+
 # POST Code
 def handle_POST(request, dtime):
 
@@ -235,6 +260,7 @@ def handle_POST(request, dtime):
                     f = open(abs_file_path, 'w')
                     f.write(content)
                     f.close()
+                    status_code, reason_phrase = 201, "Created"
 
                 else:
                     status_code, reason_phrase = 404, "Not Found"
@@ -247,13 +273,14 @@ def handle_POST(request, dtime):
         if flag == 0:
             btext = open('success.html',mode='rb').read()
         else:
-            btext = b'Unknown file format of uploaded file !'
+            btext = 'Unknown file format of uploaded file !'.encode()
 
     elif content_type and 'application/x-www-form-urlencoded' in content_type:
     # Open record file in append mode
         
         post_db.write(dtime + "\n")
         data = words[-1].split('&')
+        print("Data of form: ", data)
         for entry in data:
             # Open record file and store in it
             if '+' in entry:
@@ -263,11 +290,11 @@ def handle_POST(request, dtime):
                     value += e + " "
                 value = convert_to_string(value)
                 value = value.split("=")
-                post_db.write(value[0] + ": " + value[1])
+                post_db.write(value[0] + ": " + value[1] + "\n")
             else:
                 entry = convert_to_string(entry)
                 entry = entry.split("=")
-                post_db.write(entry[0] + ": " + entry[1])
+                post_db.write(entry[0] + ": " + entry[1] + "\n")
             
         post_db.write("\n")
         post_db.close()
@@ -288,38 +315,13 @@ def handle_POST(request, dtime):
         status_code, reason_phrase = 200, "OK"
 
     content_type = 'text/html'
-    return status_code, reason_phrase, content_type, btext
+    return 'UTF-8',status_code, reason_phrase, content_type, btext
 
 
 # PUT Code
 def handle_PUT(request):
     pass
 
-
-# DELETE Code
-def handle_DELETE(request):
-    requested_file = words[1]
-    abs_file_path = os.getcwd() + requested_file
-
-    # Status Code, Reason Phrase header
-    accept_lang, content_type = handle_req_headers(words)
-    status_code, reason_phrase, btext = handle_codes(words, accept_lang)
-
-    content_type = 'text/html'
-    if status_code == 406:
-        return 'UTF-8', status_code, reason_phrase, "text/html", btext
-
-    if os.access(abs_file_path, os.F_OK):
-        print("\nFile Exists, Deleted Successfully !\n")
-        btext = b'File Exists, Deleted Successfully !'
-        status_code, reason_phrase = 200, "OK"
-    
-    else:
-        print("\nFile Not Present On The Server !\n")
-        btext = b'File Not Present On The Server !'
-        status_code, reason_phrase = 200, "OK"
-
-    return status_code, reason_phrase, content_type, btext
 
 while True:
     connectionSocket, addr = serverSocket.accept()
@@ -343,17 +345,17 @@ while True:
             continue
 
     elif words[0] == "POST":
-        status_code, reason_phrase, content_type, btext = handle_POST(request, dtime)
+        charset, status_code, reason_phrase, content_type, btext = handle_POST(request, dtime)
 
     elif words[0] == "PUT":
-        pass
+        charset = 'UTF-8'
+        btext = None
 
     elif words[0] == "HEAD":
         charset, status_code, reason_phrase, content_type, btext = handle_HEAD(words)
-        print("Content Type: ", content_type)
 
     elif words[0] == "DELETE":
-        pass
+        charset, status_code, reason_phrase, content_type, btext = handle_DELETE(words)
 
     else:
         continue
