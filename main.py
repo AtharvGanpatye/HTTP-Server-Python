@@ -15,6 +15,8 @@ if len(sys.argv) < 2:
     print("Bad Arguments !\nGive Port Number As Well.")
     sys.exit(0)
 
+files_dir = os.getcwd() + "/post-files/"
+
 serverSocket = socket(AF_INET, SOCK_STREAM)
 
 # Port number to bind with socket.
@@ -226,63 +228,62 @@ def handle_DELETE(words):
 
 
 # POST Code
-def handle_POST(request, dtime):
+def handle_POST(bin_request, dtime, content_length_flag):
 
-    words = request.split()
-    accept_lang, content_type = handle_req_headers(words)
-    status_code, reason_phrase, btext = handle_codes(words, accept_lang)
+    bin_words = bin_request.split()
+
+    btext = "Didn't Do Anything!".encode()
+    status_code, reason_phrase = 200, "OK"
+    try:
+        i = bin_words.index(b'Content-Type:')
+        content_type = bin_words[i+1].decode()
+    except:
+        content_type = None
+
+    if not content_length_flag:        
+        request = bin_request.decode()
+    
     post_db = open('post-data.txt', 'a')
-    flag = 0
-
+    
     if content_type and 'multipart/form-data' in content_type:
-        index = words.index('multipart/form-data;')
-        boundary = words[index+1].split("=")[1]
-        form_data = request.split(boundary)[2:]
+        
+        i = bin_words.index(b'multipart/form-data;') 
+        boundary = bin_words[i+1].split(b"=")[1]
+        form_data = bin_request.split(boundary)[2:-1]
         post_db.write(dtime + "\n")
-        status_code, reason_phrase = 200, "OK"
-
-        for line in form_data:
-            entry = line.split()
-            if 'form-data;' in entry and 'Content-Type:' not in entry:
-                key = entry[2].split('"')[1]
-                value = entry[3]
-                post_db.write(key + ": " + value + "\n")
-
-            elif 'form-data;' in entry and 'Content-Type:' in entry:   
-                i = entry.index('Content-Type:')
-                file_format = entry[i+1]
-
-                #if file_format == 'text/plain':
-                if file_format:
-                    file_name = entry[3].split('"')[1]
-                    i = line.index("\r\n\r\n")
-                    content = line[i+4:].split('--')[0]
-                    abs_file_path = os.getcwd() + "/files/" + file_name
-                    f = open(abs_file_path, 'w')
-                    f.write(content)
+        for entry in form_data:
+            if b'Content-Type:' in entry:
+                # Handle for file
+                i = entry.index(b'\r\n\r\n')
+                file_name = entry[:i].split()[3].split(b'"')[1].decode()
+                file_data = entry[i+4:]
+                try:
+                    f = open(files_dir + file_name, 'wb')
+                    f.write(file_data)
                     f.close()
-                    print("Filename = ", file_name)
-                    print("Path = ", abs_file_path)
-                    print("Content = ", content)
-                    #status_code, reason_phrase = 201, "Created"
+                    btext = "Record Saved Successfully ! Files Uploaded Successfully !!".encode()
+                    status_code, reason_phrase = 200, "OK"
+                except:
+                    btext = "Some Error Occurred !".encode()
+                    status_code, reason_phrase = 200, "OK"
+            else:
+                temp_data = entry.decode().split()
+                name = temp_data[2].split('"')[1] + ": "
+                # Writing One Form Element 
+                for i in range(3,len(temp_data) - 1):
+                    name += temp_data[i] + " "
+                try:
+                    post_db.write(name + "\n")
+                    btext = "Record Saved Successfully !".encode()
+                    status_code, reason_phrase = 200, "OK"
+                except:
+                    btext = "Some Error Occurred !".encode()
                     status_code, reason_phrase = 200, "OK"
 
-                else:
-                    status_code, reason_phrase = 404, "Not Found"
-                    flag = 1
-            else:
-                pass
-
-        post_db.write("\n")
-        post_db.close()
-        if flag == 0:
-            btext = open('success.html',mode='rb').read()
-        else:
-            btext = 'Unknown file format of uploaded file !'.encode()
-
     elif content_type and 'application/x-www-form-urlencoded' in content_type:
-    # Open record file in append mode
         
+        words = request.split()
+        # Open record file in append mode
         post_db.write(dtime + "\n")
         data = words[-1].split('&')
         print("Data of form: ", data)
@@ -307,6 +308,8 @@ def handle_POST(request, dtime):
         status_code, reason_phrase = 200, "OK"
 
     else:
+        
+        words = request.split()
         form_data = request.split('\r\n\r\n')[1]
         lines = form_data.split('\r\n')
         for line in lines:
@@ -324,53 +327,94 @@ def handle_POST(request, dtime):
 
 
 # PUT Code
-def handle_PUT(request):
-    pass
+def handle_PUT(bin_request):
+
+    i = bin_request.index(b'\r\n\r\n')
+    words = bin_request[:i].split()
+    data = bin_request[i+4:]
+    
+    accept_lang, content_type = handle_req_headers(words)
+    status_code, reason_phrase, btext = handle_codes(words, accept_lang)
+
+    if status_code == 406:
+        return 'UTF-8',status_code, reason_phrase, "text/html", btext
+    
+    file_name = words[1].decode()[1:]
+    abs_file_path = files_dir + file_name
+    if os.path.isfile(abs_file_path):
+        f = open(abs_file_path, 'wb')
+        f.write(data)
+        f.close()
+        btext = b'File Updated Successfully !'
+        status_code, reason_phrase = 200, "OK"
+    else:
+        f = open(abs_file_path, 'wb')
+        f.write(data)
+        f.close()
+        btext = b'File Created Successfully !'
+        status_code, reason_phrase = 201, "Created"
+
+    return 'UTF-8',status_code, reason_phrase, content_type, btext
 
 
 while True:
     connectionSocket, addr = serverSocket.accept()
     #print("New Request Received From : {}".format(addr))
     #print("Connection Socket is: \n{}".format(connectionSocket))
-    """
-    b_data = b""
-    request = ""
-    for i in range(5):
-        temp = connectionSocket.recv(2048) 
-        b_data += temp
-        request += temp.decode()
-        if len(temp) < 2048:
-            break
-    """
-    request = connectionSocket.recv(4096).decode()
-    print("\n** Request = {}\n**\n".format(request))
-    words = request.split()
-    #print(request) 
-    #print(words)
+
+    bin_request = b""
+    buffer_size = 4096
+    bin_request = connectionSocket.recv(buffer_size)
+    bin_words = bin_request.split()
+    content_length_flag = False
+    if b'Content-Length:' in bin_words and len(bin_request) >= buffer_size * 0.80:
+        count = 0
+        content_length_flag = True
+        while True:
+            data = connectionSocket.recv(buffer_size)
+            bin_request += data
+            if len(data) < buffer_size * 0.80:
+                break
+
+    print("\nRequest:\n")
+    print(bin_request)
+    print("\n")
+    method = bin_words[0].decode()
     # Making list of date, time in required format
     dtime = time.strftime("%a, %d %b %Y %I:%M:%S %p %Z", time.gmtime())
     # GET
     # Need to check file existance, permissions, present date
-    status_code, reason_phrase, content_type, btext = 0,0,0,'null'
+    status_code, reason_phrase, content_type, btext = 0,0,0,b'null'
 
-    if words[0] == "GET":
+    if method == "GET":
+        request =  bin_request.decode()
+        words = request.split()
         charset, status_code, reason_phrase, content_type, btext = handle_GET(words)
 
         if status_code == -1:
             continue
 
-    elif words[0] == "POST":
-        charset, status_code, reason_phrase, content_type, btext = handle_POST(request, dtime)
 
-    elif words[0] == "PUT":
-        charset = 'UTF-8'
-        btext = None
+    elif method == "POST":
+        bin_words = bin_request.split()
+        charset, status_code, reason_phrase, content_type, btext = handle_POST(bin_request, dtime, content_length_flag)
 
-    elif words[0] == "HEAD":
+
+    elif method == "PUT":
+        charset, status_code, reason_phrase, content_type, btext = handle_PUT(bin_request)
+
+
+    elif method == "HEAD":
+        request =  bin_request.decode()
+        words = request.split()
         charset, status_code, reason_phrase, content_type, btext = handle_HEAD(words)
 
-    elif words[0] == "DELETE":
+
+    elif method == "DELETE":
+        request =  bin_request.decode()
+        words = request.split()
         charset, status_code, reason_phrase, content_type, btext = handle_DELETE(words)
+
 
     else:
         continue
@@ -386,7 +430,7 @@ while True:
         string += "Content-Type: {};\n".format(content_type)
     # Checking if content is present or not.
     if btext:
-        string += "Content-Length: {}\n\n".format(len(string.encode() + btext))
+        string += "Content-Length: {}\n\n".format(len(btext))
         output = string.encode() + btext
     else:
         string += "Content-Length: {}\n\n".format(len(string.encode()))
