@@ -252,7 +252,8 @@ def handle_POST(request, dtime):
                 i = entry.index('Content-Type:')
                 file_format = entry[i+1]
 
-                if file_format == 'text/plain':
+                #if file_format == 'text/plain':
+                if file_format:
                     file_name = entry[3].split('"')[1]
                     i = line.index("\r\n\r\n")
                     content = line[i+4:].split('--')[0]
@@ -260,7 +261,11 @@ def handle_POST(request, dtime):
                     f = open(abs_file_path, 'w')
                     f.write(content)
                     f.close()
-                    status_code, reason_phrase = 201, "Created"
+                    print("Filename = ", file_name)
+                    print("Path = ", abs_file_path)
+                    print("Content = ", content)
+                    #status_code, reason_phrase = 201, "Created"
+                    status_code, reason_phrase = 200, "OK"
 
                 else:
                     status_code, reason_phrase = 404, "Not Found"
@@ -327,10 +332,20 @@ while True:
     connectionSocket, addr = serverSocket.accept()
     #print("New Request Received From : {}".format(addr))
     #print("Connection Socket is: \n{}".format(connectionSocket))
-
-    request = connectionSocket.recv(2048).decode()
+    """
+    b_data = b""
+    request = ""
+    for i in range(5):
+        temp = connectionSocket.recv(2048) 
+        b_data += temp
+        request += temp.decode()
+        if len(temp) < 2048:
+            break
+    """
+    request = connectionSocket.recv(4096).decode()
+    print("\n** Request = {}\n**\n".format(request))
     words = request.split()
-    print(request) 
+    #print(request) 
     #print(words)
     # Making list of date, time in required format
     dtime = time.strftime("%a, %d %b %Y %I:%M:%S %p %Z", time.gmtime())
