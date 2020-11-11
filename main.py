@@ -5,11 +5,15 @@ handling file permissions;  Server configuration - config file with DocumentRoot
 log file name, max simulateneous connections ; way to stop and restart the server;
 
 Marks: Basic HTTP 5 method = 15 marks; MT = 3 marks; Config file and handling = 3 marks;
-cookies = 2 marks; log = 3 marks;  file permissions = 1 marks; Automated Testing = 3 marks.
+Cookies = 2 marks; Log = 3 marks;  File Permissions = 1 marks; Automated Testing = 3 marks.
 """
 
-from socket import *
-import sys, os, time
+import socket
+import sys
+import os
+import time
+import threading
+import random, logging
 
 if len(sys.argv) < 2:
     print("Bad Arguments !\nGive Port Number As Well.")
@@ -17,7 +21,7 @@ if len(sys.argv) < 2:
 
 files_dir = os.getcwd() + "/post-files/"
 
-serverSocket = socket(AF_INET, SOCK_STREAM)
+serverSocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
 # Port number to bind with socket.
 serverPort = int(sys.argv[1])
@@ -27,6 +31,32 @@ serverSocket.bind(('127.0.0.1', serverPort))
 serverSocket.listen(5)
 print("Server is listening . . . .\n")
 
+# Access Log
+logger = logging.getLogger("access")
+logger.setLevel(logging.INFO)
+h1 = logging.FileHandler("log/access_log")
+f1 = logging.Formatter('%(ip_add)s - %(asctime)s "%(request)s" %(status)s %(len)s %(message)s', datefmt='[%d/%b/%Y:%H:%M:%S %z]')
+h1.setFormatter(f1)
+logger.addHandler(h1)
+
+# Error Log
+logger_2 = logging.getLogger("error")
+logger_2.setLevel(logging.ERROR)
+h2 = logging.FileHandler("log/error_log")
+f2 = logging.Formatter('%(asctime)s [error] [client %(ip_add)s]  %(message)s', datefmt='[%a %b %d %H:%M:%S %Y]')
+h2.setFormatter(f2)
+logger_2.addHandler(h2)
+
+# Cookie Generator Function
+def cookie_gen():
+    f = open("cookiefile.txt", "r+")
+    value = ''.join(random.choices(("abcdefghijklmnopqrstuvwxyz") + ("0123456789"), k = 10))
+    if not value in f.read():
+        f.write(value)
+        f.write("\n")
+    else:
+        value = cookie_gen()
+    return value
 
 # Handle possilbe request headers.
 def handle_req_headers(words):
@@ -357,10 +387,8 @@ def handle_PUT(bin_request):
     return 'UTF-8',status_code, reason_phrase, content_type, btext
 
 
-while True:
-    connectionSocket, addr = serverSocket.accept()
-    #print("New Request Received From : {}".format(addr))
-    #print("Connection Socket is: \n{}".format(connectionSocket))
+# Handle Each Request
+def handle_request(connectionSocket, addr):
 
     bin_request = b""
     buffer_size = 4096
@@ -368,7 +396,6 @@ while True:
     bin_words = bin_request.split()
     content_length_flag = False
     if b'Content-Length:' in bin_words and len(bin_request) >= buffer_size * 0.80:
-        count = 0
         content_length_flag = True
         while True:
             data = connectionSocket.recv(buffer_size)
@@ -376,15 +403,18 @@ while True:
             if len(data) < buffer_size * 0.80:
                 break
 
-    print("\nRequest:\n")
+    print("Request:")
+    print(f"Thread ID: {threading.get_ident()}, Total Threads: {threading.active_count()}")
     print(bin_request)
     print("\n")
+
     method = bin_words[0].decode()
+    temp = bin_request.splitlines()
     # Making list of date, time in required format
     dtime = time.strftime("%a, %d %b %Y %I:%M:%S %p %Z", time.gmtime())
     # GET
     # Need to check file existance, permissions, present date
-    status_code, reason_phrase, content_type, btext = 0,0,0,b'null'
+    status_code, reason_phrase, content_type, btext = 0, 0, 0, b'null'
 
     if method == "GET":
         request =  bin_request.decode()
@@ -392,7 +422,8 @@ while True:
         charset, status_code, reason_phrase, content_type, btext = handle_GET(words)
 
         if status_code == -1:
-            continue
+            connectionSocket.close()
+            return
 
 
     elif method == "POST":
@@ -417,17 +448,50 @@ while True:
 
 
     else:
-        continue
+        status_code, reason_phrase = 400, "Bad Request"
+        content_type = 'text/html'
+        btext = 'Request Other Than GET, POST, PUT, DELETE, HEAD'.encode()
 
+    # Response Headers
     string = "HTTP/1.1 {} {}\n".format(status_code, reason_phrase)
     string += "Date: {} \n".format(dtime)
     string += "Server: Atharv's Server/V1.0\n"
     string += "Connection: close\n"
+
+    # Writing Into Log Files
+    if status_code//100 == 4 or status_code//100 == 5:
+        extra = {'ip_add': addr[0]}
+        logger_2 = logging.LoggerAdapter(logger_2, extra)
+        if status_code == 404:
+            logger_2.error('File Not Found')
+        elif status_code == 400:
+            logger_2.error('Bad Request')
+        elif status_code == 406:
+            logger_2.error('Language Not Supported')
+        else:
+            # Need for some other status codes
+            pass
+    
+    if len(btext) != 0:
+        extra = {'ip_add': addr[0], 'request': temp[0].decode(), 'status': str(status_code), 'len': str(len(btext))}
+    else:
+        extra = {'ip_add': addr[0], 'request': temp[0].decode(), 'status': str(status_code), 'len': '-'}
+
+    logger_ = logging.LoggerAdapter(logger, extra)
+    logger_.info('Recieved request.')
+
+    if not b'Cookie:' in bin_words:
+        value = cookie_gen()
+        value += "\n"
+        temp = "Set-Cookie: HttpSession=" + value
+        string += temp
+
     # Check content-type, charset.
     if charset:
         string += "Content-Type: {}; charset=UTF-8\n".format(content_type)
     if content_type:
         string += "Content-Type: {};\n".format(content_type)
+    
     # Checking if content is present or not.
     if btext:
         string += "Content-Length: {}\n\n".format(len(btext))
@@ -438,5 +502,17 @@ while True:
 
     connectionSocket.send(output)
     connectionSocket.close()
+    return
 
-serverSocket.close()
+# Accept Request
+try:
+    while True:
+        connectionSocket, addr = serverSocket.accept()
+        print("New Request Received From : {}".format(addr))
+        print("Connection Socket is: \n{}".format(connectionSocket))
+        # Create A Thread For Each Request
+        th = threading.Thread(target=handle_request, args=(connectionSocket,addr))
+        th.start()
+except KeyboardInterrupt:
+    print("Server Closed !")
+    serverSocket.close()

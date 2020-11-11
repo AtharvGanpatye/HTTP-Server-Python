@@ -1,0 +1,11 @@
+127.0.0.1 - [11/Nov/2020:15:13:32 +0530] "GET / HTTP/1.1" 200 239 Recieved request.
+127.0.0.1 - [11/Nov/2020:15:13:41 +0530] "GET / HTTP/1.1" 200 239 Recieved request.
+127.0.0.1 - [11/Nov/2020:15:13:46 +0530] "GET /form.html HTTP/1.1" 200 1205 Recieved request.
+127.0.0.1 - [11/Nov/2020:15:13:57 +0530] "POST /form.html HTTP/1.1" 200 58 Recieved request.
+127.0.0.1 - [11/Nov/2020:15:15:17 +0530] "GET / HTTP/1.1" 200 239 Recieved request.
+127.0.0.1 - [11/Nov/2020:15:15:28 +0530] "GET / HTTP/1.1" 200 239 Recieved request.
+127.0.0.1 - [11/Nov/2020:15:15:30 +0530] "GET / HTTP/1.1" 200 239 Recieved request.
+127.0.0.1 - [11/Nov/2020:15:15:35 +0530] "GET /form.html HTTP/1.1" 200 1205 Recieved request.
+127.0.0.1 - [11/Nov/2020:15:15:48 +0530] "POST /form.html HTTP/1.1" 200 58 Recieved request.
+127.0.0.1 - [11/Nov/2020:15:15:59 +0530] "GET /form.html HTTP/1.1" 200 1205 Recieved request.
+127.0.0.1 - [11/Nov/2020:15:16:03 +0530] "POST /form.html HTTP/1.1" 200 58 Recieved request.
