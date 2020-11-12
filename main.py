@@ -7,49 +7,70 @@ log file name, max simulateneous connections ; way to stop and restart the serve
 Marks: Basic HTTP 5 method = 15 marks; MT = 3 marks; Config file and handling = 3 marks;
 Cookies = 2 marks; Log = 3 marks;  File Permissions = 1 marks; Automated Testing = 3 marks.
 """
-
+import datetime
 import socket
 import sys
 import os
 import time
 import threading
 import random, logging
+import shutil
+import mimetypes
+from configparser import ConfigParser
 
 if len(sys.argv) < 2:
     print("Bad Arguments !\nGive Port Number As Well.")
     sys.exit(0)
 
-files_dir = os.getcwd() + "/post-files/"
+#Read config.ini file
+conf = ConfigParser()
+conf.read("server.ini")
 
+default = conf["SERVERCONFIG"]
+logs = conf["LOGS"]
+info = conf["DATA"]
+uploads = conf["FILES"]
+
+# Variables for paths
+doc_root = default["DocumentRoot"]
+server_addr = default["server_addr"]
+access_log_path = logs["access_log"]
+error_log_path = logs["error_log"]
+files_dir = uploads["uploaded"]
+cookie_file_path = info["cookies"]
+post_file_path = info["post"]
+trash_path = info["trash"]
+
+# Creating server socket
 serverSocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
 # Port number to bind with socket.
 serverPort = int(sys.argv[1])
 
 # Binding socket and port.
-serverSocket.bind(('127.0.0.1', serverPort))
+serverSocket.bind((server_addr, serverPort))
 serverSocket.listen(5)
 print("Server is listening . . . .\n")
 
 # Access Log
 logger = logging.getLogger("access")
 logger.setLevel(logging.INFO)
-h1 = logging.FileHandler("log/access_log")
-f1 = logging.Formatter('%(ip_add)s - %(asctime)s "%(request)s" %(status)s %(len)s %(message)s', datefmt='[%d/%b/%Y:%H:%M:%S %z]')
+h1 = logging.FileHandler(access_log_path)
+f1 = logging.Formatter('%(ip_add)s - %(asctime)s "%(request)s" \t %(status)s %(len)s %(message)s', datefmt='[%d/%b/%Y:%H:%M:%S %z]')
 h1.setFormatter(f1)
 logger.addHandler(h1)
 
 # Error Log
 logger_2 = logging.getLogger("error")
 logger_2.setLevel(logging.ERROR)
-h2 = logging.FileHandler("log/error_log")
+h2 = logging.FileHandler(error_log_path)
 f2 = logging.Formatter('%(asctime)s [error] [client %(ip_add)s]  %(message)s', datefmt='[%a %b %d %H:%M:%S %Y]')
 h2.setFormatter(f2)
 logger_2.addHandler(h2)
 
 # Cookie Generator Function
 def cookie_gen():
-    f = open("cookiefile.txt", "r+")
+    f = open(cookie_file_path, "r+")
     value = ''.join(random.choices(("abcdefghijklmnopqrstuvwxyz") + ("0123456789"), k = 10))
     if not value in f.read():
         f.write(value)
@@ -72,14 +93,44 @@ def handle_req_headers(words):
 
     return accept_lang, content_type
 
+# Dictionary to convert month to its decimal
+month = { 'Jan': 1, 'Feb': 2, 'Mar': 3, 'Apr': 4, 'May': 5, 'Jun': 6, 'Jul': 7, 'Aug': 8, 'Sep': 9, 'Oct': 10, 'Nov': 11, 'Dec': 12 }
+
+# For checking last modified
+def check_modified(date_req, file_path):
+    date = date_req.split()
+    dd = int(date[1])
+    mm = month[date[2]]
+    yy = int(date[3])
+    t = date[4].split(':')
+    hr = int(t[0])
+    mn = int(t[1])
+    ss = int(t[2])
+    t_check = datetime.datetime(yy, mm, dd, hr, mn, ss) 
+
+    date = time.ctime(os.path.getmtime(file_path)).split()
+    dd = int(date[2])
+    mm = month[date[1]]
+    yy = int(date[4])
+    t = date[3].split(':')
+    hr = int(t[0])
+    mn = int(t[1])
+    ss = int(t[2])
+    t_mod = datetime.datetime(yy, mm, dd, hr, mn, ss)
+
+    if t_check < t_mod:
+        return True
+    else:
+        return False  
+
 
 def handle_codes(words, accept_lang):
     status_code, reason_phrase, btext = None, None, None
 
     if accept_lang and 'en' not in accept_lang:
-        # Server can't respond to language other than english
+        # Server can't respond to language other than English
         status_code, reason_phrase = 406, "Not Acceptable"
-        btext = b'Language other than English.\n'
+        btext = b'<h1>Language other than English.</h1>'
 
     return status_code, reason_phrase, btext
 
@@ -103,65 +154,66 @@ def convert_to_string(string):
 # GET Code
 def handle_GET(words):
 
-    requested_file = words[1]
-    abs_file_path = os.getcwd() + requested_file
+    if words[1] == "/":
+        requested_file = "index.html"
+    else:
+        requested_file = words[1][1:]
+        
+    file_path = doc_root + requested_file
 
     # Status Code, Reason Phrase header
     accept_lang, content_type = handle_req_headers(words)
     status_code, reason_phrase, btext = handle_codes(words, accept_lang)
 
-    # Content-Type Header
-    charset = None
-    if '/' == requested_file:
-        content_type = 'text/html'
-        charset = 'UTF-8'
-    elif '.html' in requested_file:
-        content_type = 'text/html'
-        charset = 'UTF-8'
-    elif '.jpg' in requested_file or '.jpeg' in requested_file:
-        content_type = 'image/jpeg'
-    elif '.png' in requested_file:
-        content_type = 'image/png'
-    elif '.gif' in requested_file:
-        content_type = 'image/gif'
-    elif '.css' in requested_file:
-        content_type = 'text/css'
-        charset = 'UTF-8'
-    elif '.txt' in requested_file:
-        content_type = 'text/plain'
-        charset = 'UTF-8'
-    else:
-        content_type = 'text/html'
-        charset = 'UTF-8'
-        btext = "Sorry, Unknown Data Type !\nTry Again!\n".encode()
-        status_code, reason_phrase = 404, "Not Found"
-
     if status_code == 406:
         return 'UTF-8',status_code, reason_phrase, "text/html", btext
-
-    elif words[1] == "/favicon.ico":
+        
+    # Checking
+    if words[1] == "/favicon.ico":
         return -1,-1,-1,-1,-1
 
-    elif words[1] == '/':
-        req_file = open("home.html", mode='rb')
-        btext = req_file.read()
-        status_code, reason_phrase = 200, "OK"
-        req_file.close()
-
     else:
-        if not os.access(abs_file_path, os.F_OK):
-            btext = "Sorry! Page Not Found\nTry Again!\n".encode()
+        if not os.access(file_path, os.F_OK):
+            btext = "<h1>Sorry! Page Not Found! Try Again!!</h1>".encode()
+            content_type = 'text/html'
+            charset = 'UTF-8'
             status_code, reason_phrase = 404, "Not Found"
 
-        elif os.access(abs_file_path, os.R_OK):
-            req_file = open(abs_file_path, mode='rb')
-            btext = req_file.read()
-            status_code, reason_phrase = 200, "OK"
-            req_file.close()
+        elif os.access(file_path, os.R_OK):
+
+            if 'If-Modified-Since:' in words:
+                i = words.index('If-Modified-Since:')
+                date = words[i+1] + " " + words[i+2] + " " + words[i+3] + " " + words[i+4] + " " + words[i+5]
+                check = check_modified(date, file_path)
+
+            if check:
+                req_file = open(file_path, mode='rb')
+                btext = req_file.read()
+                status_code, reason_phrase = 200, "OK"
+                req_file.close()
+                # Content-Type Header
+                content_type = mimetypes.guess_type(file_path)[0]
+                if not content_type:
+                    content_type = 'text/html'
+                    charset = 'UTF-8'
+                    btext = "<h1>Sorry, Unknown Data Type !</h1>".encode()
+                    status_code, reason_phrase = 404, "Not Found"
+
+                elif 'text' in content_type:
+                    charset = "UTF-8"
+                
+                else:
+                    charset = None
+
+            else:
+                charset = None
+                content_type = 'text/html'
+                status_code, reason_phrase = 304, "Not Modified" 
 
         else:
-            #btext = "File Doesn't Have Read Permissions !\n".encode()
-            content_type = None
+            btext = "<h1>File Doesn't Have Read Permissions !</h1>".encode()
+            content_type = "text/html"
+            charset = 'UTF-8'
             status_code, reason_phrase = 403, "Forbidden"
 
     return charset, status_code, reason_phrase, content_type, btext
@@ -170,8 +222,12 @@ def handle_GET(words):
 # HEAD Code
 def handle_HEAD(words):
 
-    requested_file = words[1]
-    abs_file_path = os.getcwd() + requested_file
+    if words[1] == "/":
+        requested_file = "index.html"
+    else:
+        requested_file = words[1][1:]
+
+    file_path = doc_root + requested_file
 
     # Status Code, Reason Phrase header
     accept_lang, content_type = handle_req_headers(words)
@@ -183,78 +239,67 @@ def handle_HEAD(words):
     elif words[1] == "/favicon.ico":
         return -1,-1,-1,-1,-1
 
-    elif words[1] == '/':
-        if not os.access('home.html', os.F_OK):
+    else:
+        if not os.access(file_path, os.F_OK):
             status_code, reason_phrase = 404, "Not Found"
-        elif os.access('home.html', os.R_OK):
-            status_code, reason_phrase = 200, "OK"
+
+        elif os.access(file_path, os.R_OK):
+            if 'If-Modified-Since:' in words:
+                i = words.index('If-Modified-Since:')
+                date = words[i+1] + " " + words[i+2] + " " + words[i+3] + " " + words[i+4] + " " + words[i+5]
+                print(date)
+                check = check_modified(date, file_path)
+            
+            if check:
+                status_code, reason_phrase = 200, "OK"
+            else:
+                status_code, reason_phrase = 304, "Not Modified"
+            # Content-Type Header
+            content_type = mimetypes.guess_type(file_path)[0]
+            # if 'text' in content_type:
+            #     charset = 'UTF-8'
+            # else:
+            #     charset = None
+            content_type = None
+            charset = None
+
         else:
             status_code, reason_phrase = 403, "Forbidden"
 
-    else:
-        if not os.access(abs_file_path, os.F_OK):
-            #btext = "Sorry! Page Not Found\nTry Again!\n".encode()
-            status_code, reason_phrase = 404, "Not Found"
-
-        elif os.access(abs_file_path, os.R_OK):
-            status_code, reason_phrase = 200, "OK"
-
-        else:
-            #btext = "File Doesn't Have Read Permissions !\n".encode()
-            status_code, reason_phrase = 403, "Forbidden"
-
-    # Content-type header
-    charset = None
-    if '/' == requested_file:
-        content_type = 'text/html'
-        charset = 'UTF-8'
-    elif '.html' in requested_file:
-        content_type = 'text/html'
-        charset = 'UTF-8'
-    elif '.jpg' in requested_file or '.jpeg' in requested_file:
-        content_type = 'image/jpeg'
-    elif '.png' in requested_file:
-        content_type = 'image/png'
-    elif '.gif' in requested_file:
-        content_type = 'image/gif'
-    elif '.css' in requested_file:
-        content_type = 'text/css'
-        charset = 'UTF-8'
-    elif '.txt' in requested_file:
-        content_type = 'text/plain'
-        charset = 'UTF-8'
-    else:
-        content_type = 'text/html'
-        charset = 'UTF-8'
-        btext = "Sorry, Unknown Data Type !\nTry Again!\n".encode()
-        status_code, reason_phrase = 404, "Not Found"
 
     return charset, status_code, reason_phrase, content_type, btext
 
 
 # DELETE Code
 def handle_DELETE(words):
-    requested_file = words[1]
-    abs_file_path = os.getcwd() + requested_file
+
+    if words[1] == "/":
+        requested_file = "index.html"
+    else:
+        requested_file = words[1][1:]
+
+    file_path = doc_root + requested_file
 
     # Status Code, Reason Phrase header
     accept_lang, content_type = handle_req_headers(words)
     status_code, reason_phrase, btext = handle_codes(words, accept_lang)
 
     content_type = 'text/html'
-    if status_code == 406:
-        return 'UTF-8', status_code, reason_phrase, "text/html", btext
+    charset = 'UTF-8'
 
-    if os.access(abs_file_path, os.F_OK):
-        os.remove(abs_file_path)
-        btext = 'File Deleted Successfully !'.encode()
+    if status_code == 406:
+        return charset, status_code, reason_phrase, content_type, btext
+
+    if os.access(file_path, os.F_OK):
+        shutil.move(file_path, trash_path)
+        btext = '<h1>File Deleted Successfully !</h1>'.encode()
         status_code, reason_phrase = 200, "OK"
     
     else:
-        btext = 'File Not Present On The Server !'.encode()
+        btext = '<h1>File Not Present On The Server !</h1>'.encode()
         status_code, reason_phrase = 200, "OK"
 
-    return 'UTF-8',status_code, reason_phrase, content_type, btext
+    return charset,status_code, reason_phrase, content_type, btext
 
 
 # POST Code
@@ -262,8 +307,9 @@ def handle_POST(bin_request, dtime, content_length_flag):
 
     bin_words = bin_request.split()
 
-    btext = "Didn't Do Anything!".encode()
+    btext = "<h1>No Action Taken !</h1>".encode()
     status_code, reason_phrase = 200, "OK"
+
     try:
         i = bin_words.index(b'Content-Type:')
         content_type = bin_words[i+1].decode()
@@ -273,7 +319,7 @@ def handle_POST(bin_request, dtime, content_length_flag):
     if not content_length_flag:        
         request = bin_request.decode()
     
-    post_db = open('post-data.txt', 'a')
+    post_db = open(post_file_path, 'a')
     
     if content_type and 'multipart/form-data' in content_type:
         
@@ -287,14 +333,16 @@ def handle_POST(bin_request, dtime, content_length_flag):
                 i = entry.index(b'\r\n\r\n')
                 file_name = entry[:i].split()[3].split(b'"')[1].decode()
                 file_data = entry[i+4:]
+                upload_file_path = files_dir + file_name
                 try:
-                    f = open(files_dir + file_name, 'wb')
+                    f = open(upload_file_path, 'wb')
                     f.write(file_data)
                     f.close()
-                    btext = "Record Saved Successfully ! Files Uploaded Successfully !!".encode()
+                    btext = open(doc_root + '/success.html',mode='rb').read()
+                    post_db.write("File Uploaded : " + file_name + "\n\n")
                     status_code, reason_phrase = 200, "OK"
                 except:
-                    btext = "Some Error Occurred !".encode()
+                    btext = "<h1>Some Error Occurred !</h1>".encode()
                     status_code, reason_phrase = 200, "OK"
             else:
                 temp_data = entry.decode().split()
@@ -304,7 +352,7 @@ def handle_POST(bin_request, dtime, content_length_flag):
                     name += temp_data[i] + " "
                 try:
                     post_db.write(name + "\n")
-                    btext = "Record Saved Successfully !".encode()
+                    btext = open(doc_root + '/success.html',mode='rb').read()
                     status_code, reason_phrase = 200, "OK"
                 except:
                     btext = "Some Error Occurred !".encode()
@@ -334,7 +382,7 @@ def handle_POST(bin_request, dtime, content_length_flag):
             
         post_db.write("\n")
         post_db.close()
-        btext = open('success.html',mode='rb').read()
+        btext = open(doc_root + '/success.html',mode='rb').read()
         status_code, reason_phrase = 200, "OK"
 
     else:
@@ -349,7 +397,7 @@ def handle_POST(bin_request, dtime, content_length_flag):
                 entry = line.split("=")
                 post_db.write(entry[0] + ": " + entry[1] + "\n")
         post_db.close()
-        btext = open('success.html',mode='rb').read()
+        btext = open(doc_root + '/success.html',mode='rb').read()
         status_code, reason_phrase = 200, "OK"
 
     content_type = 'text/html'
@@ -391,35 +439,36 @@ def handle_PUT(bin_request):
 def handle_request(connectionSocket, addr):
 
     bin_request = b""
-    buffer_size = 4096
+    buffer_size = 8192
     bin_request = connectionSocket.recv(buffer_size)
     bin_words = bin_request.split()
     content_length_flag = False
-    if b'Content-Length:' in bin_words and len(bin_request) >= buffer_size * 0.80:
+
+    if b'Content-Length:' in bin_words:
         content_length_flag = True
         while True:
             data = connectionSocket.recv(buffer_size)
             bin_request += data
-            if len(data) < buffer_size * 0.80:
+            if len(data) <= buffer_size * 0.80:
                 break
-
-    print("Request:")
-    print(f"Thread ID: {threading.get_ident()}, Total Threads: {threading.active_count()}")
-    print(bin_request)
-    print("\n")
 
     method = bin_words[0].decode()
     temp = bin_request.splitlines()
     # Making list of date, time in required format
-    dtime = time.strftime("%a, %d %b %Y %I:%M:%S %p %Z", time.gmtime())
+    dtime = time.strftime("%a, %d %b %Y %I:%M:%S %Z", time.gmtime())
     # GET
-    # Need to check file existance, permissions, present date
-    status_code, reason_phrase, content_type, btext = 0, 0, 0, b'null'
+    charset, status_code, reason_phrase, content_type, btext = b'null', 0, 0, 0, b'null'
 
     if method == "GET":
+        
         request =  bin_request.decode()
         words = request.split()
         charset, status_code, reason_phrase, content_type, btext = handle_GET(words)
+
+        print("Request:")
+        print(f"Thread ID: {threading.get_ident()}, Total Threads: {threading.active_count()}\n")
+        print(request)
+        print("\n")
 
         if status_code == -1:
             connectionSocket.close()
@@ -427,22 +476,32 @@ def handle_request(connectionSocket, addr):
 
 
     elif method == "POST":
+        print(bin_request)
         bin_words = bin_request.split()
         charset, status_code, reason_phrase, content_type, btext = handle_POST(bin_request, dtime, content_length_flag)
 
 
     elif method == "PUT":
+        print(bin_request)
         charset, status_code, reason_phrase, content_type, btext = handle_PUT(bin_request)
 
 
     elif method == "HEAD":
         request =  bin_request.decode()
+        print("Request:")
+        print(f"Thread ID: {threading.get_ident()}, Total Threads: {threading.active_count()}\n")
+        print(request)
+        print("\n")
         words = request.split()
         charset, status_code, reason_phrase, content_type, btext = handle_HEAD(words)
 
 
     elif method == "DELETE":
         request =  bin_request.decode()
+        print("Request:")
+        print(f"Thread ID: {threading.get_ident()}, Total Threads: {threading.active_count()}\n")
+        print(request)
+        print("\n")
         words = request.split()
         charset, status_code, reason_phrase, content_type, btext = handle_DELETE(words)
 
@@ -461,18 +520,18 @@ def handle_request(connectionSocket, addr):
     # Writing Into Log Files
     if status_code//100 == 4 or status_code//100 == 5:
         extra = {'ip_add': addr[0]}
-        logger_2 = logging.LoggerAdapter(logger_2, extra)
+        logger_2_ = logging.LoggerAdapter(logger_2, extra)
         if status_code == 404:
-            logger_2.error('File Not Found')
+            logger_2_.error('File Not Found')
         elif status_code == 400:
-            logger_2.error('Bad Request')
+            logger_2_.error('Bad Request')
         elif status_code == 406:
-            logger_2.error('Language Not Supported')
+            logger_2_.error('Language Not Supported')
         else:
             # Need for some other status codes
             pass
     
-    if len(btext) != 0:
+    if btext and len(btext) != 0:
         extra = {'ip_add': addr[0], 'request': temp[0].decode(), 'status': str(status_code), 'len': str(len(btext))}
     else:
         extra = {'ip_add': addr[0], 'request': temp[0].decode(), 'status': str(status_code), 'len': '-'}
@@ -489,12 +548,12 @@ def handle_request(connectionSocket, addr):
     # Check content-type, charset.
     if charset:
         string += "Content-Type: {}; charset=UTF-8\n".format(content_type)
-    if content_type:
+    if content_type and not charset:
         string += "Content-Type: {};\n".format(content_type)
     
     # Checking if content is present or not.
     if btext:
-        string += "Content-Length: {}\n\n".format(len(btext))
+        string += "Content-Length: {}\n\n".format(len(string.encode() + btext))
         output = string.encode() + btext
     else:
         string += "Content-Length: {}\n\n".format(len(string.encode()))
@@ -513,6 +572,7 @@ try:
         # Create A Thread For Each Request
         th = threading.Thread(target=handle_request, args=(connectionSocket,addr))
         th.start()
+
 except KeyboardInterrupt:
-    print("Server Closed !")
+    print("\nServer Closed !")
     serverSocket.close()

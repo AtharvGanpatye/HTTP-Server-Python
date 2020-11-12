@@ -1,11 +1,13 @@
 import sys, socket, os
+import mimetypes
 
-if len(sys.argv) != 4:
+if len(sys.argv) != 3:
     print("Bad Arguments, Enter Port Number")
+    sys.exit()
 
 senderPort = int(sys.argv[1])
 file_path = sys.argv[2]
-content_type = sys.argv[3]
+content_type = mimetypes.guess_type(file_path)[0]
 file_name = file_path.split('/')[-1]
 
 if os.path.isfile(file_path):
@@ -24,8 +26,10 @@ request = f"PUT /{file_name} HTTP/1.1\r\n"
 request += f"Host: {serverName}:{senderPort}\r\n"
 request += f"Content-Type: {content_type}\r\n"
 request += f"Content-Length: {len(data)}\r\n\r\n"
+print(request)
 request = request.encode()
 request += data
+
 
 try:
     senderSocket.connect((serverName, senderPort))
