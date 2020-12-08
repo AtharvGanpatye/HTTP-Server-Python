@@ -14,7 +14,7 @@ serverport = int(sys.argv[1])
 msgs = []
 
 headers3="HEAD /index.html HTTP/1.1\r\n"
-headers3+=f"Host: {serverip}:{serverport}\r\n"
+headers3+=f"Host: {serverip}:8000\r\n"
 headers3+="Content-Type: text/html\r\n"
 headers3+="User-Agent: Mozilla\r\n"
 headers3+="Accept-Language: en-US\r\n"

@@ -2,7 +2,7 @@ import sys, socket, os
 import mimetypes
 
 if len(sys.argv) != 3:
-    print("Bad Arguments, Enter Port Number")
+    print("Bad Arguments")
     sys.exit()
 
 senderPort = int(sys.argv[1])

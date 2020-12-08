@@ -173,15 +173,14 @@ def handle_GET(words):
         return -1,-1,-1,-1,-1
 
     else:
-        #if not os.access(file_path, os.F_OK) or not os.path.isfile(file_path):
-        if not os.path.isfile(file_path):
+        if not os.access(file_path, os.F_OK):
             btext = "<h1>Sorry! Page Not Found! Try Again!!</h1>".encode()
             content_type = 'text/html'
             charset = 'UTF-8'
             status_code, reason_phrase = 404, "Not Found"
 
         elif os.access(file_path, os.R_OK):
-            check = "None"
+
             if 'If-Modified-Since:' in words:
                 i = words.index('If-Modified-Since:')
                 date = words[i+1] + " " + words[i+2] + " " + words[i+3] + " " + words[i+4] + " " + words[i+5]
@@ -243,10 +242,8 @@ def handle_HEAD(words):
     else:
         if not os.access(file_path, os.F_OK):
             status_code, reason_phrase = 404, "Not Found"
-            charset = None
 
         elif os.access(file_path, os.R_OK):
-            check = "None"
             if 'If-Modified-Since:' in words:
                 i = words.index('If-Modified-Since:')
                 date = words[i+1] + " " + words[i+2] + " " + words[i+3] + " " + words[i+4] + " " + words[i+5]
@@ -306,7 +303,7 @@ def handle_DELETE(words):
 
 
 # POST Code
-def handle_POST(bin_request, dtime):
+def handle_POST(bin_request, dtime, content_length_flag):
 
     bin_words = bin_request.split()
 
@@ -316,9 +313,11 @@ def handle_POST(bin_request, dtime):
     try:
         i = bin_words.index(b'Content-Type:')
         content_type = bin_words[i+1].decode()
-        print
     except:
         content_type = None
+
+    if not content_length_flag:        
+        request = bin_request.decode()
     
     post_db = open(post_file_path, 'a')
     
@@ -361,7 +360,6 @@ def handle_POST(bin_request, dtime):
 
     elif content_type and 'application/x-www-form-urlencoded' in content_type:
         
-        request = bin_request.decode()
         words = request.split()
         # Open record file in append mode
         post_db.write(dtime + "\n")
@@ -389,7 +387,6 @@ def handle_POST(bin_request, dtime):
 
     else:
         
-        request = bin_request.decode()
         words = request.split()
         form_data = request.split('\r\n\r\n')[1]
         lines = form_data.split('\r\n')
@@ -445,61 +442,66 @@ def handle_request(connectionSocket, addr):
     buffer_size = 8192
     bin_request = connectionSocket.recv(buffer_size)
     bin_words = bin_request.split()
-    if len(bin_request) >= 0.90 * buffer_size:
+    content_length_flag = False
+
+    if b'Content-Length:' in bin_words:
+        content_length_flag = True
         while True:
             data = connectionSocket.recv(buffer_size)
             bin_request += data
-            if len(data) <= buffer_size * 0.9:
+            if len(data) <= buffer_size * 0.80:
                 break
 
     method = bin_words[0].decode()
     temp = bin_request.splitlines()
     # Making list of date, time in required format
     dtime = time.strftime("%a, %d %b %Y %I:%M:%S %Z", time.gmtime())
-    charset, status_code, reason_phrase, content_type, btext = b'null', 0, 0, 0, b'null'
-    print(f"Thread ID: {threading.get_ident()}, Total Threads: {threading.active_count()}\n")
-
     # GET
+    charset, status_code, reason_phrase, content_type, btext = b'null', 0, 0, 0, b'null'
+
     if method == "GET":
+        
         request =  bin_request.decode()
         words = request.split()
         charset, status_code, reason_phrase, content_type, btext = handle_GET(words)
 
-        if words[1] == '/favicon.ico':
-            return
         print("Request:")
+        print(f"Thread ID: {threading.get_ident()}, Total Threads: {threading.active_count()}\n")
         print(request)
+        print("\n")
 
         if status_code == -1:
             connectionSocket.close()
             return
 
-    # POST
+
     elif method == "POST":
-        print("Binary Request:")
         print(bin_request)
         bin_words = bin_request.split()
-        charset, status_code, reason_phrase, content_type, btext = handle_POST(bin_request, dtime)
+        charset, status_code, reason_phrase, content_type, btext = handle_POST(bin_request, dtime, content_length_flag)
 
-    # PUT
+
     elif method == "PUT":
-        print("Binary Request:")
         print(bin_request)
         charset, status_code, reason_phrase, content_type, btext = handle_PUT(bin_request)
 
-    # HEAD
+
     elif method == "HEAD":
         request =  bin_request.decode()
         print("Request:")
+        print(f"Thread ID: {threading.get_ident()}, Total Threads: {threading.active_count()}\n")
         print(request)
+        print("\n")
         words = request.split()
         charset, status_code, reason_phrase, content_type, btext = handle_HEAD(words)
 
-    # DELETE
+
     elif method == "DELETE":
         request =  bin_request.decode()
         print("Request:")
+        print(f"Thread ID: {threading.get_ident()}, Total Threads: {threading.active_count()}\n")
         print(request)
+        print("\n")
         words = request.split()
         charset, status_code, reason_phrase, content_type, btext = handle_DELETE(words)
 
@@ -559,6 +561,7 @@ def handle_request(connectionSocket, addr):
 
     connectionSocket.send(output)
     connectionSocket.close()
+    return
 
 # Accept Request
 try:

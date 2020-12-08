@@ -14,7 +14,7 @@ def handle_connection():
     r.close()
     
     
-for i in range(100):
+for i in range(1000):
     th = threading.Thread(target=handle_connection)
     th.start()
 
